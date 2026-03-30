@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Sidebar from "@/components/Sidebar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,11 +24,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="mn">
+      <body className="flex">
+        {/* Sidebar хэсэг */}
+        <Sidebar />
+
+        {/* Үндсэн контент (Sidebar-ийн өргөнийг хасаад үлдсэн зайг авна) */}
+        <main className="ml-64 p-8 w-full min-h-screen bg-gray-50 text-black">
+          {children}
+        </main>
+      </body>
     </html>
   );
 }
