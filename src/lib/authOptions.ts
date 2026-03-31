@@ -2,13 +2,21 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import { JWT } from "next-auth/jwt";
-import { User } from "next-auth";
+import { Session, User } from "next-auth";
 
 // Supabase холболт
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY! // Энэ түлхүүр заавал нууц байх ёстой
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+        `Missing Supabase server-side environment variables:\n` +
+        `NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? '✓' : '✗ NOT SET'}\n` +
+        `SUPABASE_SERVICE_ROLE_KEY: ${serviceRoleKey ? '✓' : '✗ NOT SET'}`
+    );
+}
+
+const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 export const authOptions = {
     providers: [
@@ -51,18 +59,18 @@ export const authOptions = {
         })
     ],
     callbacks: {
-        // token болон user-т зориулсан төрлүүдийг зааж өгнө
-        async jwt({ token, user }: { token: JWT; user?: User | any }) {
+        // user-ийн төрөл одоо автоматаар бидний тодорхойлсон User болсон
+        async jwt({ token, user }: { token: JWT; user?: User }) {
             if (user) {
                 token.id = user.id;
             }
             return token;
         },
 
-        // session болон token-т зориулсан төрлүүдийг зааж өгнө
-        async session({ session, token }: { session: any; token: JWT }) {
+        // session-ий төрөл одоо бидний өргөтгөсөн Session болсон
+        async session({ session, token }: { session: Session; token: JWT }) {
             if (session.user) {
-                session.user.id = token.id as string;
+                session.user.id = token.id;
             }
             return session;
         }
