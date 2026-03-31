@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
+import AuthProvider from "@/components/AuthProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,13 +27,15 @@ export default function RootLayout({
   return (
     <html lang="mn">
       <body className="flex">
-        {/* Sidebar хэсэг */}
-        <Sidebar />
+        <AuthProvider>
+          {/* Sidebar хэсэг */}
+          <Sidebar />
 
-        {/* Үндсэн контент (Sidebar-ийн өргөнийг хасаад үлдсэн зайг авна) */}
-        <main className="ml-64 p-8 w-full min-h-screen bg-gray-50 text-black">
-          {children}
-        </main>
+          {/* Үндсэн контент (Sidebar-ийн өргөнийг хасаад үлдсэн зайг авна) */}
+          <main className="ml-64 p-8 w-full min-h-screen bg-gray-50 text-black">
+            {children}
+          </main>
+        </AuthProvider>
       </body>
     </html>
   );
