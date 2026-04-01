@@ -2,7 +2,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import { JWT } from "next-auth/jwt";
-import { Session, User } from "next-auth";
+import { NextAuthOptions, Session, User } from "next-auth";
 
 // Supabase холболт
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,7 +18,7 @@ if (!supabaseUrl || !serviceRoleKey) {
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-export const authOptions = {
+export const authOptions: NextAuthOptions = {
     providers: [
         CredentialsProvider({
             name: "Credentials",
@@ -58,16 +58,17 @@ export const authOptions = {
             }
         })
     ],
+    // 👇 This tells NextAuth where your login page is
+    pages: {
+        signIn: '/login',
+    },
     callbacks: {
-        // user-ийн төрөл одоо автоматаар бидний тодорхойлсон User болсон
         async jwt({ token, user }: { token: JWT; user?: User }) {
             if (user) {
                 token.id = user.id;
             }
             return token;
         },
-
-        // session-ий төрөл одоо бидний өргөтгөсөн Session болсон
         async session({ session, token }: { session: Session; token: JWT }) {
             if (session.user) {
                 session.user.id = token.id;

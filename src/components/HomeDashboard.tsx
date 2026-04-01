@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { supabase } from '@/lib/supabase';
 import { Expense } from '@/types';
@@ -10,9 +10,8 @@ import {
 } from 'lucide-react';
 import ExpenseDonutChart from '@/components/charts/ExpenseDonutChart';
 import FilterBar from '@/components/layout/FilterBar';
+import { FeedbackToast } from '@/components/ui/FeedbackToast';
 import Link from 'next/link';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Income {
   id: string;
@@ -32,8 +31,6 @@ interface ChartData {
   amount: number;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
 const CATEGORY_COLORS: Record<string, string> = {
   'Хоол': '#3b82f6',
   'Унаа': '#8b5cf6',
@@ -41,8 +38,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Энтертайнмент': '#ec4899',
   'Бусад': '#10b981',
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
   return new Intl.NumberFormat('mn-MN').format(Math.round(n)) + ' ₮';
@@ -57,8 +52,6 @@ function relativeTime(dateStr: string) {
   const days = Math.floor(hrs / 24);
   return `${days}өдрийн өмнө`;
 }
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function BalanceCard({ totalIncome, totalExpense }: { totalIncome: number; totalExpense: number }) {
   const balance = totalIncome - totalExpense;
@@ -97,7 +90,7 @@ function SummaryCard({ label, value, icon, color, sub }: {
 }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3`} style={{ backgroundColor: color + '18' }}>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: color + '18' }}>
         <span style={{ color }}>{icon}</span>
       </div>
       <p className="text-xs text-gray-400 font-medium">{label}</p>
@@ -151,19 +144,82 @@ type ActivityItem =
   | { kind: 'expense'; data: Expense }
   | { kind: 'income'; data: Income };
 
+type DeleteTarget =
+  | { kind: 'expense'; id: string; title: string }
+  | { kind: 'income'; id: string; title: string };
+
 const INCOME_CATEGORIES = ['Цалин', 'Урамшуулал', 'Бизнес', 'Хөрөнгө оруулалт', 'Бусад'];
 const EXPENSE_CATEGORIES = ['Хоол', 'Унаа', 'Орон сууц', 'Энтертайнмент', 'Бусад'];
 
+function DeleteConfirmModal({
+  target,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  target: DeleteTarget | null;
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!target) return null;
+
+  const label = target.kind === 'income' ? 'орлого' : 'зардал';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-3xl bg-white border border-gray-100 shadow-2xl p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 flex-shrink-0">
+            <Trash2 size={20} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-bold text-gray-900">Устгах уу?</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              <span className="font-semibold text-gray-700">&quot;{target.title}&quot;</span> гэсэн {label} бүртгэлийг устгах гэж байна.
+            </p>
+            <p className="mt-1 text-sm text-gray-500">
+              Энэ үйлдлийг буцаах боломжгүй.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={deleting}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50"
+          >
+            Болих
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={deleting}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+          >
+            {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            {deleting ? 'Устгаж байна...' : 'Устгах'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActivityFeed({
   items,
-  onDeleteExpense,
-  onDeleteIncome,
+  onRequestDelete,
   onRefresh,
+  onError,
+  onSuccess,
 }: {
   items: ActivityItem[];
-  onDeleteExpense: (id: string) => void;
-  onDeleteIncome: (id: string) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
   onRefresh: () => void;
+  onError: (message: string) => void;
+  onSuccess: (message: string) => void;
 }) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -193,9 +249,10 @@ function ActivityFeed({
     const { error } = await supabase.from(table).update(payload).eq('id', item.data.id);
     setSaving(false);
     if (error) {
-      alert('Засварлахад алдаа гарлаа');
+      onError('Засварлахад алдаа гарлаа');
     } else {
       setEditingKey(null);
+      onSuccess('Мэдээлэл амжилттай шинэчлэгдлээ');
       onRefresh();
     }
   };
@@ -300,11 +357,11 @@ function ActivityFeed({
               <Pencil size={15} />
             </button>
             <button
-              onClick={() => {
-                if (confirm('Та энэ бичлэгийг устгахдаа итгэлтэй байна уу?')) {
-                  isIncome ? onDeleteIncome(item.data.id) : onDeleteExpense(item.data.id);
-                }
-              }}
+              onClick={() => onRequestDelete({
+                kind: item.kind,
+                id: item.data.id,
+                title: item.data.title,
+              })}
               className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-xl hover:bg-red-50 text-gray-300 hover:text-red-400 flex-shrink-0"
             >
               <Trash2 size={15} />
@@ -316,67 +373,79 @@ function ActivityFeed({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-export default function Home() {
+export default function HomeDashboard() {
   const { data: session, status } = useSession();
+  const userId = session?.user?.id;
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // ── Fetch ───────────────────────────────────────────────────────────────
-
-  const fetchAll = useCallback(async () => {
-    if (!session?.user?.id) return;
-    setLoading(true);
-
-    const now = new Date();
-    let dateFilter: string | null = null;
-    if (filter === 'today') {
-      dateFilter = new Date(now.setHours(0, 0, 0, 0)).toISOString();
-    } else if (filter === 'month') {
-      dateFilter = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    }
-
-    const expenseQuery = supabase
-      .from('expenses')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
-
-    const incomeQuery = supabase
-      .from('incomes')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
-
-    const budgetQuery = supabase
-      .from('budgets')
-      .select('category, amount')
-      .eq('user_id', session.user.id);
-
-    if (dateFilter) {
-      expenseQuery.gte('created_at', dateFilter);
-      incomeQuery.gte('created_at', dateFilter);
-    }
-
-    const [expRes, incRes, budRes] = await Promise.all([expenseQuery, incomeQuery, budgetQuery]);
-
-    if (!expRes.error && expRes.data) setExpenses(expRes.data);
-    if (!incRes.error && incRes.data) setIncomes(incRes.data);
-    if (!budRes.error && budRes.data) setBudgets(budRes.data);
-
-    setLoading(false);
-  }, [session?.user?.id, filter]);
+  function showToast(message: string, type: 'success' | 'error') {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }
 
   useEffect(() => {
-    if (status === 'authenticated') fetchAll();
-  }, [status, fetchAll]);
+    if (!userId) return;
 
-  // ── Derived data ─────────────────────────────────────────────────────────
+    let cancelled = false;
+
+    async function loadDashboard() {
+      setLoading(true);
+
+      const now = new Date();
+      let dateFilter: string | null = null;
+      if (filter === 'today') {
+        dateFilter = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+      } else if (filter === 'month') {
+        dateFilter = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      }
+
+      const expenseQuery = supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      const incomeQuery = supabase
+        .from('incomes')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      const budgetQuery = supabase
+        .from('budgets')
+        .select('category, amount')
+        .eq('user_id', userId);
+
+      if (dateFilter) {
+        expenseQuery.gte('created_at', dateFilter);
+        incomeQuery.gte('created_at', dateFilter);
+      }
+
+      const [expRes, incRes, budRes] = await Promise.all([expenseQuery, incomeQuery, budgetQuery]);
+
+      if (cancelled) return;
+
+      if (!expRes.error && expRes.data) setExpenses(expRes.data);
+      if (!incRes.error && incRes.data) setIncomes(incRes.data);
+      if (!budRes.error && budRes.data) setBudgets(budRes.data);
+
+      setLoading(false);
+    }
+
+    loadDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filter, userId]);
 
   const totalExpense = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
   const totalIncome = useMemo(() => incomes.reduce((s, e) => s + e.amount, 0), [incomes]);
@@ -390,7 +459,6 @@ export default function Home() {
     }, []);
   }, [expenses]);
 
-  // Category spend map for budget progress
   const categorySpend = useMemo(() => {
     const map: Record<string, number> = {};
     expenses.forEach((e) => {
@@ -399,7 +467,6 @@ export default function Home() {
     return map;
   }, [expenses]);
 
-  // Recent activity: merge expenses + incomes, sort by date, take 8
   const activityItems: ActivityItem[] = useMemo(() => {
     const items: ActivityItem[] = [
       ...expenses.map((e) => ({ kind: 'expense' as const, data: e })),
@@ -410,24 +477,87 @@ export default function Home() {
       .slice(0, 8);
   }, [expenses, incomes]);
 
-  // Days in current month for avg
   const daysElapsed = Math.max(1, new Date().getDate());
 
-  // ── Delete handlers ──────────────────────────────────────────────────────
+  async function refreshDashboard() {
+    if (!userId) return;
+
+    setLoading(true);
+
+    const now = new Date();
+    let dateFilter: string | null = null;
+    if (filter === 'today') {
+      dateFilter = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+    } else if (filter === 'month') {
+      dateFilter = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    }
+
+    const expenseQuery = supabase
+      .from('expenses')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    const incomeQuery = supabase
+      .from('incomes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    const budgetQuery = supabase
+      .from('budgets')
+      .select('category, amount')
+      .eq('user_id', userId);
+
+    if (dateFilter) {
+      expenseQuery.gte('created_at', dateFilter);
+      incomeQuery.gte('created_at', dateFilter);
+    }
+
+    const [expRes, incRes, budRes] = await Promise.all([expenseQuery, incomeQuery, budgetQuery]);
+
+    if (!expRes.error && expRes.data) setExpenses(expRes.data);
+    if (!incRes.error && incRes.data) setIncomes(incRes.data);
+    if (!budRes.error && budRes.data) setBudgets(budRes.data);
+
+    setLoading(false);
+  }
 
   const handleDeleteExpense = async (id: string) => {
+    setDeleteLoading(true);
     const { error } = await supabase.from('expenses').delete().eq('id', id);
-    if (!error) fetchAll();
-    else alert('Устгахад алдаа гарлаа');
+    if (!error) {
+      setDeleteTarget(null);
+      showToast('Зардал устгагдлаа', 'success');
+      await refreshDashboard();
+    } else {
+      showToast('Устгахад алдаа гарлаа', 'error');
+    }
+    setDeleteLoading(false);
   };
 
   const handleDeleteIncome = async (id: string) => {
+    setDeleteLoading(true);
     const { error } = await supabase.from('incomes').delete().eq('id', id);
-    if (!error) fetchAll();
-    else alert('Устгахад алдаа гарлаа');
+    if (!error) {
+      setDeleteTarget(null);
+      showToast('Орлого устгагдлаа', 'success');
+      await refreshDashboard();
+    } else {
+      showToast('Устгахад алдаа гарлаа', 'error');
+    }
+    setDeleteLoading(false);
   };
 
-  // ── Loading ──────────────────────────────────────────────────────────────
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+
+    if (deleteTarget.kind === 'income') {
+      await handleDeleteIncome(deleteTarget.id);
+    } else {
+      await handleDeleteExpense(deleteTarget.id);
+    }
+  }
 
   if (status === 'loading' || loading) {
     return (
@@ -438,12 +568,8 @@ export default function Home() {
     );
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
-
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6">
-
-      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">
@@ -467,13 +593,10 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── Filter ── */}
       <FilterBar selectedFilter={filter} onFilterChange={setFilter} />
 
-      {/* ── Balance card ── */}
       <BalanceCard totalIncome={totalIncome} totalExpense={totalExpense} />
 
-      {/* ── Summary cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryCard
           label="Зарцуулалт"
@@ -505,10 +628,7 @@ export default function Home() {
         />
       </div>
 
-      {/* ── Charts + Budget ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* Donut chart */}
         <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm min-h-[360px] flex flex-col">
           <h3 className="text-lg font-bold text-gray-800 mb-4 text-center">Ангиллаарх зардал</h3>
           <div className="flex-grow flex items-center justify-center">
@@ -519,7 +639,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Budget progress */}
         <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-gray-800">Төсвийн явц</h3>
@@ -555,7 +674,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── Recent activity feed ── */}
       <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-gray-800">Сүүлийн үйл ажиллагаа</h3>
@@ -563,11 +681,21 @@ export default function Home() {
         </div>
         <ActivityFeed
           items={activityItems}
-          onDeleteExpense={handleDeleteExpense}
-          onDeleteIncome={handleDeleteIncome}
-          onRefresh={fetchAll}
+          onRequestDelete={setDeleteTarget}
+          onRefresh={refreshDashboard}
+          onError={(message) => showToast(message, 'error')}
+          onSuccess={(message) => showToast(message, 'success')}
         />
       </div>
+      <DeleteConfirmModal
+        target={deleteTarget}
+        deleting={deleteLoading}
+        onCancel={() => {
+          if (!deleteLoading) setDeleteTarget(null);
+        }}
+        onConfirm={confirmDelete}
+      />
+      {toast && <FeedbackToast message={toast.message} type={toast.type} />}
     </div>
   );
 }

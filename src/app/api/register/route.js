@@ -15,7 +15,7 @@ export async function POST(req) {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // 2. Supabase руу insert хийх
-        const { data, error } = await supabase
+        const { error } = await supabase
             .from("users")
             .insert([{ email, password: hashedPassword, name }])
             .select();
@@ -25,7 +25,7 @@ export async function POST(req) {
         }
 
         return NextResponse.json({ message: "Амжилттай бүртгэгдлээ" }, { status: 201 });
-    } catch (err) {
+    } catch {
         return NextResponse.json({ error: "Серверийн алдаа гарлаа" }, { status: 500 });
     }
 }

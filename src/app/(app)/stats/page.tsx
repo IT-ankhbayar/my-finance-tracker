@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { supabase } from '@/lib/supabase';
 import { Expense } from '@/types';
@@ -136,7 +136,19 @@ function CategoryBar({ category, amount, total }: { category: string; amount: nu
 
 // ─── Custom Tooltip for Bar Chart ─────────────────────────────────────────────
 
-function CustomTooltip({ active, payload, label }: any) {
+type TooltipPayloadItem = {
+    value: number;
+};
+
+function CustomTooltip({
+    active,
+    payload,
+    label,
+}: {
+    active?: boolean;
+    payload?: TooltipPayloadItem[];
+    label?: string;
+}) {
     if (active && payload && payload.length) {
         return (
             <div className="bg-white border border-gray-100 shadow-lg rounded-xl px-4 py-3 text-sm">
@@ -154,46 +166,54 @@ type RangeOption = '3' | '6' | '12';
 
 export default function StatsPage() {
     const { data: session, status } = useSession();
+    const userId = session?.user?.id;
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [incomes, setIncomes] = useState<Income[]>([]);
     const [loading, setLoading] = useState(true);
     const [range, setRange] = useState<RangeOption>('6');
     const [exporting, setExporting] = useState(false);
 
-    // ── Fetch ──────────────────────────────────────────────────────────────────
-
-    const fetchAll = useCallback(async () => {
-        if (!session?.user?.id) return;
-        setLoading(true);
-
-        const from = new Date();
-        from.setMonth(from.getMonth() - parseInt(range));
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
-
-        const [expRes, incRes] = await Promise.all([
-            supabase
-                .from('expenses')
-                .select('*')
-                .eq('user_id', session.user.id)
-                .gte('created_at', from.toISOString())
-                .order('created_at', { ascending: true }),
-            supabase
-                .from('incomes')
-                .select('*')
-                .eq('user_id', session.user.id)
-                .gte('created_at', from.toISOString())
-                .order('created_at', { ascending: true }),
-        ]);
-
-        if (!expRes.error && expRes.data) setExpenses(expRes.data);
-        if (!incRes.error && incRes.data) setIncomes(incRes.data);
-        setLoading(false);
-    }, [session?.user?.id, range]);
-
     useEffect(() => {
-        if (status === 'authenticated') fetchAll();
-    }, [status, fetchAll]);
+        if (!userId) return;
+
+        let cancelled = false;
+
+        async function loadStats() {
+            setLoading(true);
+
+            const from = new Date();
+            from.setMonth(from.getMonth() - parseInt(range));
+            from.setDate(1);
+            from.setHours(0, 0, 0, 0);
+
+            const [expRes, incRes] = await Promise.all([
+                supabase
+                    .from('expenses')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .gte('created_at', from.toISOString())
+                    .order('created_at', { ascending: true }),
+                supabase
+                    .from('incomes')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .gte('created_at', from.toISOString())
+                    .order('created_at', { ascending: true }),
+            ]);
+
+            if (cancelled) return;
+
+            if (!expRes.error && expRes.data) setExpenses(expRes.data);
+            if (!incRes.error && incRes.data) setIncomes(incRes.data);
+            setLoading(false);
+        }
+
+        loadStats();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [range, userId]);
 
     // ── Derived data ──────────────────────────────────────────────────────────
 

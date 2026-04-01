@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { supabase } from '@/lib/supabase';
+import { FeedbackToast } from '@/components/ui/FeedbackToast';
 import {
     User, Wallet, Trash2, Loader2,
-    Save, LogOut, AlertTriangle, CheckCircle2,
+    Save, LogOut, AlertTriangle,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -38,21 +39,11 @@ function SectionCard({ title, icon, children }: {
     );
 }
 
-function Toast({ message, type }: { message: string; type: 'success' | 'error' }) {
-    return (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-5 py-3 rounded-2xl shadow-lg text-white text-sm font-medium z-50 transition-all ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
-            {type === 'success'
-                ? <CheckCircle2 size={18} />
-                : <AlertTriangle size={18} />}
-            {message}
-        </div>
-    );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
     const { data: session, status } = useSession();
+    const userId = session?.user?.id;
 
     // Budget state: { category -> limit string }
     const [budgets, setBudgets] = useState<Record<string, string>>(
@@ -73,41 +64,47 @@ export default function SettingsPage() {
         setTimeout(() => setToast(null), 3000);
     }
 
-    // ── Fetch existing budgets ────────────────────────────────────────────────
-
-    const fetchBudgets = useCallback(async () => {
-        if (!session?.user?.id) return;
-        setBudgetLoading(true);
-
-        const { data, error } = await supabase
-            .from('budgets')
-            .select('category, amount')
-            .eq('user_id', session.user.id);
-
-        if (!error && data) {
-            const map: Record<string, string> = Object.fromEntries(CATEGORIES.map((c) => [c, '']));
-            data.forEach(({ category, amount }) => {
-                map[category] = String(amount);
-            });
-            setBudgets(map);
-        }
-        setBudgetLoading(false);
-    }, [session?.user?.id]);
-
     useEffect(() => {
-        if (status === 'authenticated') fetchBudgets();
-    }, [status, fetchBudgets]);
+        if (!userId) return;
+
+        let cancelled = false;
+
+        async function loadBudgets() {
+            setBudgetLoading(true);
+
+            const { data, error } = await supabase
+                .from('budgets')
+                .select('category, amount')
+                .eq('user_id', userId);
+
+            if (cancelled) return;
+
+            if (!error && data) {
+                const map: Record<string, string> = Object.fromEntries(CATEGORIES.map((c) => [c, '']));
+                data.forEach(({ category, amount }) => {
+                    map[category] = String(amount);
+                });
+                setBudgets(map);
+            }
+            setBudgetLoading(false);
+        }
+
+        loadBudgets();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
 
     // ── Save budgets ──────────────────────────────────────────────────────────
 
     const handleSaveBudgets = async () => {
-        if (!session?.user?.id) return;
         setBudgetSaving(true);
 
         const rows = CATEGORIES
             .filter((c) => budgets[c] !== '')
             .map((c) => ({
-                user_id: session.user.id,
+                user_id: userId!,
                 category: c,
                 amount: parseFloat(budgets[c]) || 0,
             }));
@@ -123,7 +120,7 @@ export default function SettingsPage() {
             await supabase
                 .from('budgets')
                 .delete()
-                .eq('user_id', session.user.id)
+                .eq('user_id', userId!)
                 .in('category', cleared);
         }
 
@@ -138,7 +135,6 @@ export default function SettingsPage() {
     // ── Clear all expenses ────────────────────────────────────────────────────
 
     const handleClearData = async () => {
-        if (!session?.user?.id) return;
         if (deleteConfirm !== 'УСТГАХ') {
             showToast('Баталгаажуулалтын текст буруу байна', 'error');
             return;
@@ -148,7 +144,7 @@ export default function SettingsPage() {
         const { error } = await supabase
             .from('expenses')
             .delete()
-            .eq('user_id', session.user.id);
+            .eq('user_id', userId!);
 
         setDeleteLoading(false);
         setDeleteConfirm('');
@@ -315,7 +311,7 @@ export default function SettingsPage() {
             </SectionCard>
 
             {/* Toast */}
-            {toast && <Toast message={toast.message} type={toast.type} />}
+            {toast && <FeedbackToast message={toast.message} type={toast.type} />}
         </div>
     );
 }
