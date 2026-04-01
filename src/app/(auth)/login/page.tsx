@@ -4,6 +4,7 @@ import { signIn } from 'next-auth/react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Mail, Lock, LogIn } from 'lucide-react';
+import { LoginErrors, validateLoginForm } from '@/lib/validation';
 import {
     AuthField,
     AuthFooterLink,
@@ -16,19 +17,12 @@ export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
-    const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+    const [fieldErrors, setFieldErrors] = useState<LoginErrors>({});
     const [loading, setLoading] = useState(false);
     const router = useRouter();
 
     function validateForm() {
-        const nextErrors: { email?: string; password?: string } = {};
-
-        if (!email.trim()) nextErrors.email = 'И-мэйл хаяг оруулна уу';
-        else if (!/\S+@\S+\.\S+/.test(email.trim())) nextErrors.email = 'Зөв и-мэйл хаяг оруулна уу';
-
-        if (!password) nextErrors.password = 'Нууц үг оруулна уу';
-        else if (password.length < 6) nextErrors.password = 'Нууц үг хамгийн багадаа 6 тэмдэгт байна';
-
+        const nextErrors = validateLoginForm(email, password);
         setFieldErrors(nextErrors);
         return Object.keys(nextErrors).length === 0;
     }

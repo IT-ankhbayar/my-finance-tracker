@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Mail, Lock, User, UserPlus, CheckCircle2 } from 'lucide-react';
+import { RegisterErrors, validateRegisterForm } from '@/lib/validation';
 import {
     AuthField,
     AuthFooterLink,
@@ -17,35 +18,13 @@ export default function RegisterPage() {
     const [password, setPassword] = useState('');
     const [confirm, setConfirm] = useState('');
     const [error, setError] = useState('');
-    const [fieldErrors, setFieldErrors] = useState<{
-        name?: string;
-        email?: string;
-        password?: string;
-        confirm?: string;
-    }>({});
+    const [fieldErrors, setFieldErrors] = useState<RegisterErrors>({});
     const [success, setSuccess] = useState(false);
     const [loading, setLoading] = useState(false);
     const router = useRouter();
 
     function validateForm() {
-        const nextErrors: {
-            name?: string;
-            email?: string;
-            password?: string;
-            confirm?: string;
-        } = {};
-
-        if (!name.trim()) nextErrors.name = 'Нэр оруулна уу';
-
-        if (!email.trim()) nextErrors.email = 'И-мэйл хаяг оруулна уу';
-        else if (!/\S+@\S+\.\S+/.test(email.trim())) nextErrors.email = 'Зөв и-мэйл хаяг оруулна уу';
-
-        if (!password) nextErrors.password = 'Нууц үг оруулна уу';
-        else if (password.length < 6) nextErrors.password = 'Нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой';
-
-        if (!confirm) nextErrors.confirm = 'Нууц үгээ давтаж оруулна уу';
-        else if (password !== confirm) nextErrors.confirm = 'Нууц үг таарахгүй байна';
-
+        const nextErrors = validateRegisterForm(name, email, password, confirm);
         setFieldErrors(nextErrors);
         return Object.keys(nextErrors).length === 0;
     }

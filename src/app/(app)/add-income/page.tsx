@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useSession } from 'next-auth/react';
 import { FeedbackToast } from '@/components/ui/FeedbackToast';
+import { TransactionErrors, validateTransactionForm } from '@/lib/validation';
 import {
     TransactionField,
     TransactionFormShell,
@@ -24,7 +25,7 @@ export default function AddIncomePage() {
     const [category, setCategory] = useState('Цалин');
     const [loading, setLoading] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-    const [errors, setErrors] = useState<{ title?: string; amount?: string; category?: string }>({});
+    const [errors, setErrors] = useState<TransactionErrors>({});
 
     function showToast(message: string, type: 'success' | 'error') {
         setToast({ message, type });
@@ -32,16 +33,7 @@ export default function AddIncomePage() {
     }
 
     function validateForm() {
-        const nextErrors: { title?: string; amount?: string; category?: string } = {};
-
-        if (!title.trim()) nextErrors.title = 'Тайлбар оруулна уу';
-
-        const parsedAmount = Number(amount);
-        if (!amount.trim()) nextErrors.amount = 'Дүн оруулна уу';
-        else if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) nextErrors.amount = '0-ээс их дүн оруулна уу';
-
-        if (!category) nextErrors.category = 'Ангилал сонгоно уу';
-
+        const nextErrors = validateTransactionForm(title, amount, category);
         setErrors(nextErrors);
         return Object.keys(nextErrors).length === 0;
     }
